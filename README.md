@@ -6,8 +6,8 @@
 
 ## 目录
 
-- [01. 理解 TypeScript 与 JavaScript 之间的关系](#01.%20理解%20TypeScript%20与%20JavaScript%20之间的关系)
-- [02. 明确你使用的 TypeScript 选项](#02.%20明确你使用的%20TypeScript%20选项)
+- [01. 理解 TypeScript 与 JavaScript 之间的关系](#01-理解-TypeScript-与-JavaScript-之间的关系)
+- [02. 明确你使用的 TypeScript 选项](#02-明确你使用的-TypeScript-选项)
 
 <!-- markdownlint-disable MD033 -->
 
