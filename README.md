@@ -2,14 +2,15 @@
 
 # [《Effective TypeScript》](https://effectivetypescript.com/)读书笔记
 
-<img src="https://effectivetypescript.com/images/cover.jpg" width="267" height="350"/>
+<a href="https://effectivetypescript.com/">
+  <img src="https://effectivetypescript.com/images/cover.jpg" width="267" height="350"/>
+</a>
 
 ## 目录
 
 - [01. 理解 TypeScript 与 JavaScript 之间的关系](#01-理解-TypeScript-与-JavaScript-之间的关系)
 - [02. 明确你使用的 TypeScript 选项](#02-明确你使用的-TypeScript-选项)
-
-<!-- markdownlint-disable MD033 -->
+- [03. 理解代码生成与类型系统是相互独立的](#03-理解代码生成与类型系统是相互独立的)
 
 ### 01. 理解 TypeScript 与 JavaScript 之间的关系
 
@@ -179,3 +180,175 @@ const x: number | null = null;
 1. 在与他人讨论 TypeScript 问题时，需要首先明确各自使用的配置项是否一致。
 2. 团队中应该使用 `tsconfig.json` 文件来确保成员间使用的配置项一致。
 3. 新项目应该开启 `noImplicitAny` 和 `strictNullChecks` 两个配置项。
+
+### 03. 理解代码生成与类型系统是相互独立的
+
+从宏观上说，`tsc` 做了两件事：
+
+1. 它会将基于”下一代“语法编写的 TyepScript/JavaScript 代码转换成能在浏览器中运行的低版本的 JavaScript 代码(转义)。
+2. 它会检查代码中的类型错误。
+
+与我们日常认知不太相符的是：**这两件事之间是完全独立的。**这也就意味着代码里的类型并不能影响编译出的 JavaScript 代码，也不能影响代码的运行时行为。
+
+#### 类型错误并不影响代码的编译结果
+
+在 TypeScript 中类型错误并不会阻断构建流程，这一点和 C 或 Java 很不一样。TypeScript 中的类型错误更像是这两种语言中的 `warning`。
+
+通常在执行 `tsc` 的过程中如果遇到类型错误，我们会说”代码编译失败了“。实际上这一说法并不严谨，`tsc` 依然会输出编译得到的 JavaScript，更严谨的说法是”我们的程序里有类型错误“。
+
+如果在遇到类型错误时不想输出编译结果，可以在 `tsconfig.json` 中开启 `noEmitOnError` 选项。
+
+#### 不能在运行时进行 TypeScript 类型检查
+
+看这段代码：
+
+```typescript
+interface Square {
+  width: number;
+}
+interface Rectangle extends Square {
+  height: number;
+}
+type Shape = Square | Rectangle;
+function calculateArea(shape: Shape) {
+  if (shape instanceof Rectangle) {
+    //                 ~~~~~~~~~ 'Rectangle' only refers to a type,
+    //                            but is being used as a value here
+    return shape.width * shape.height;
+    //                         ~~~~~~ Property 'height' does not exist
+    //                                on type 'Shape'
+  } else {
+    return shape.width * shape.width;
+  }
+}
+```
+
+为何会提示错误呢？因为 `instanceof` 操作发生在运行时，而 `Rectangle` 是一个类型，所有类型信息(`interface`，`type` 以及类型注释)在编译阶段会被统一”抹去“。
+
+上面的错误消息里提到 `Rectangle` 是一个类型，但我们把它当做值来使用了。那么在 TypeScript 中哪些操作会创建值，哪些操作会创建类型呢？在[官方文档](https://www.typescriptlang.org/docs/handbook/declaration-merging.html#basic-concepts)中有详细解释，感兴趣可以详细阅读。
+
+要在运行时检查类型，你可以**通过判断特定属性是否存在**：
+
+```typescript
+function calculateArea(shape: Shape) {
+  if ("height" in shape) {
+    shape; // Type is Rectangle
+    return shape.width * shape.height;
+  } else {
+    shape; // Type is Square
+    return shape.width * shape.width;
+  }
+}
+```
+
+或是**给数据结构额外增加一个标识数据类型的字段**：
+
+```typescript
+interface Square {
+  kind: "square";
+  width: number;
+}
+interface Rectangle {
+  kind: "rectangle";
+  height: number;
+  width: number;
+}
+type Shape = Square | Rectangle;
+function calculateArea(shape: Shape) {
+  if (shape.kind === "rectangle") {
+    shape; // Type is Rectangle
+    return shape.width * shape.height;
+  } else {
+    shape; // Type is Square
+    return shape.width * shape.width;
+  }
+}
+```
+
+再或是**通过创建类，来解决**(在 TypeScript 中 `class` 既是值又是类型)：
+
+```typescript
+class Square {
+  constructor(public width: number) {}
+}
+class Rectangle extends Square {
+  constructor(public width: number, public height: number) {
+    super(width);
+  }
+}
+type Shape = Square | Rectangle;
+function calculateArea(shape: Shape) {
+  if (shape instanceof Rectangle) {
+    shape; // Type is Rectangle
+    return shape.width * shape.height;
+  } else {
+    shape; // Type is Square
+    return shape.width * shape.width; // OK
+  }
+}
+```
+
+#### 类型操作不会影响运行时变量值
+
+假设你有函数：
+
+```typescript
+function asNumber(val: number | string): number {
+  return val as number;
+}
+```
+
+这里的 `as number` 操作仅限于类型检查时，它并不会在运行时将变量 `val` 的值转换为数字。这段代码在编译后得到的 JavaScript 代码是：
+
+```javascript
+function asNumber(val) {
+  return val;
+}
+```
+
+如果你需要在运行时进行类型转换，那么你必须明确使用 `Number` 函数对入参进行转换，像下面这样：
+
+```typescript
+function asNumber(val: number | string): number {
+  return typeof val === "string" ? Number(val) : val;
+}
+```
+
+#### 运行时变量类型可能与代码中声明的类型不一致
+
+这一点比较好理解，代码中声明的类型更像是我们代码库内一种”契约“。它描述的是我们期望的入参、出餐的类型。但当我们的程序在运行时有外部输入时，我们并不能保证外部输入的值总是符合我们的”预期“。你为后端接口定义了完备的数据结构，并不能组织线上运行时后端在一个布尔值字段上返回了字符串 `true` 或 `false`。因此，对于程序中重要的接口或其他外部输入，你可能需要考虑建立针对性的数据校验机制。
+
+#### 你不能基于 TypeScript 类型重载函数
+
+在其他语言中(例如 C++)，你可以为一个函数不同的参数类型定义多种实现。这一特性被称为[”函数重载“](https://en.wikipedia.org/wiki/Function_overloading)。
+
+如果你在 TypeScript 中进行相同的操作，你会得到一个错误：
+
+```typescript
+function add(a: number, b: number) {
+  //     ~~~ Duplicate function implementation
+  return a + b;
+}
+function add(a: string, b: string) {
+  //     ~~~ Duplicate function implementation
+  return a + b;
+}
+```
+
+原因其实很简单，因为 TypeScript 最终会编译成 JavaScript，在 JavaScript 你不能对同一个函数实现两个版本。
+
+TypeScript 实现了另外一种形式的函数重载：**你可以为同一个函数提供多个类型定义**。像下面这样：
+
+```typescript
+function add(a: number, b: number): number;
+function add(a: string, b: string): string;
+function add(a, b) {
+  return a + b;
+}
+const three = add(1, 2); // Type is number
+const twelve = add("1", "2"); // Type is string
+```
+
+#### TypeScript 类型不会影响运行时性能
+
+这一点比较好理解，类型信息在构建过程中都被移除了，运行时执行的其实是纯 JavaScript 代码，因此不会有性能影响。
