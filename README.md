@@ -8,10 +8,17 @@
 
 ## 目录
 
+第一章 初识 TypeScript
+
 - [01. 理解 TypeScript 与 JavaScript 之间的关系](#01-理解-TypeScript-与-JavaScript-之间的关系)
 - [02. 明确你使用的 TypeScript 选项](#02-明确你使用的-TypeScript-选项)
 - [03. 理解代码生成与类型系统是相互独立的](#03-理解代码生成与类型系统是相互独立的)
 - [04. 理解 TypeScript 中的结构化类型](#04-理解-TypeScript-中的结构化类型)
+- [05. 限制 `any` 类型的使用](#05-限制-any-类型的使用)
+
+第二章 TypeScript 的类型系统
+
+## 正文
 
 ### 01. 理解 TypeScript 与 JavaScript 之间的关系
 
@@ -453,3 +460,12 @@ class C {
 const c = new C("instance of C");
 const d: C = { foo: "object literal" }; // OK!
 ```
+
+### 05. 限制 `any` 类型的使用
+
+给变量设置 `any` 类型后会有以下影响：
+
+- 相关代码不再受类型检查保护。
+- 该变量在 IDE 中不再享受任何语言服务（智能提示、一键重构等）。
+- 在重构代码时，容易引入 Bug。
+- 从长远来讲，任用 `any` 类型会打击团队成员对代码质量的信心。团队成员在开发时不得不一边修复类型错误，一边在大脑里记住变量的真实类型。
