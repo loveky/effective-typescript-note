@@ -11,6 +11,7 @@
 - [01. 理解 TypeScript 与 JavaScript 之间的关系](#01-理解-TypeScript-与-JavaScript-之间的关系)
 - [02. 明确你使用的 TypeScript 选项](#02-明确你使用的-TypeScript-选项)
 - [03. 理解代码生成与类型系统是相互独立的](#03-理解代码生成与类型系统是相互独立的)
+- [04. 理解 TypeScript 中的结构化类型](#04-理解-TypeScript-中的结构化类型)
 
 ### 01. 理解 TypeScript 与 JavaScript 之间的关系
 
@@ -352,3 +353,103 @@ const twelve = add("1", "2"); // Type is string
 #### TypeScript 类型不会影响运行时性能
 
 这一点比较好理解，类型信息在构建过程中都被移除了，运行时执行的其实是纯 JavaScript 代码，因此不会有性能影响。
+
+### 04. 理解 TypeScript 中的结构化类型
+
+JavaScript 语言本质上是[鸭子类型](https://zh.wikipedia.org/wiki/%E9%B8%AD%E5%AD%90%E7%B1%BB%E5%9E%8B)的：当你向函数传递参数对象时，只要这个对象可以满足函数所需的全部属性，函数并不关心这个对象是如何创建的。换句话说，一个对象有效的语义，不是由继承自特定的类或实现特定的接口，而是由"当前方法和属性的集合"决定。
+
+TypeScript 在类型检查时实现了同样的行为(因为 TypeScript 最终要被编译为 JavaScript)。“鸭子类型”机制和我们理解的常规意义的类型系统之间可能会有一些“冲突”，了解这其中的关系有助于我们更好的理解哪些写法会导致 TypeScript 类型错误以及如何写出更健壮的代码。
+
+假设我们有一个向量类型以及计算向量长度的函数：
+
+```typescript
+interface Vector2D {
+  x: number;
+  y: number;
+}
+
+function calculateLength(v: Vector2D) {
+  return Math.sqrt(v.x * v.x + v.y * v.y);
+}
+```
+
+然后我们又定义了一个新的类型命名向量：
+
+```typescript
+interface NamedVector {
+  name: string;
+  x: number;
+  y: number;
+}
+```
+
+是否可以通过 `calculateLength` 函数给 `NamedVector` 类型的数据计算长度呢？答案是“可以”。你可以在[这里](https://www.typescriptlang.org/play/index.html?ssl=8&ssc=2&pln=1&pc=1#code/JYOwLgpgTgZghgYwgAgGoQWA9lATAEWQG8AoZZADwC5kQBXAWwCNoBuM5ATxvubZIC+JEjDohMwLCGQI4AGwR05cSABkIIAOZgAFgAoAbjXSYcBAJTEOUCGDpRpAWRU6AdAGcAjlDCHXFZAAqZAN-ZABqENdOIKjOc3YhElBIWEQUADk4BggAExNsKCtyEGyIGncwKFBNdnJqWkYWKDquHib+JIQpSpCaLJz8jELkAF5iShoAZgAaNuQAFjnSnJoAIgAtCAg15AF2WQUlFQh1LV1DBOQAemvkAHkAaTmbdyUwZGB3ZABWEiA)查看结果。
+
+我们并没有声明 `Vector2D` 与 `NamedVector` 之间的关系，也没有对 `calculateLength` 方法基于两种数据类型进行重载。为何 TypeScript 的类型检查器没有提示我们传入参数的类型与函数声明的参数类型不匹配呢？因为 `NamedVector` 类型的数据结构与 `Vector2D` 的数据结构是兼容的。
+
+但“鸭子类型”并不总是带来便利，在其它场景中可能就会带来意想不到的问题。
+
+假设我们又引入了一个 `Vector3D` 类型：
+
+```typescript
+interface Vector3D {
+  x: number;
+  y: number;
+  z: number;
+}
+```
+
+然后写了一个函数来对这个三维向量做[归一化](https://baike.baidu.com/item/%E5%90%91%E9%87%8F%E5%BD%92%E4%B8%80%E5%8C%96%E6%B3%95/22779174?fr=aladdin)：
+
+```typescript
+function normalize(v: Vector3D) {
+  const length = calculateLength(v);
+  return {
+    x: v.x / length,
+    y: v.y / length,
+    z: v.z / length,
+  };
+}
+```
+
+你会发现这个函数没有类型错误，但它的计算结果也不正确，因为 `calculateLength` 只计算了 `x` 和 `y` 两个坐标。**当你开发了一段时间 TypeScript 后，像这种不涉及类型错误的程序逻辑问题，很容易在开发阶段被我们忽视**。
+
+“鸭子类型”另一个可能会引起问题的场景是，我们通常会认为函数收到数据的类型与我们声明的类型是严格一致的，然而实际上由于 “鸭子类型”的存在，我们的收的实际数据类型可能是我们声明的类型的“超集”。参数的类型是“开放的”而不是“封闭”、“精确”的。
+
+举个例子：
+
+```typescript
+function calculateLengthL1(v: Vector3D) {
+  let length = 0;
+  for (const axis of Object.keys(v)) {
+    const coord = v[axis];
+    //            ~~~~~~~ Element implicitly has an 'any' type because ...
+    //                    'string' can't be used to index type 'Vector3D'
+    length += Math.abs(coord);
+  }
+  return length;
+}
+```
+
+按照常规想法，`axis` 的值只会取 `x`、`y`、`z`，对应在 `Vector3D` 类型上的值也都是数字，为什么在错误信息中会提示 `v[axis]` 是隐含的 `any` 类型呢？这是因为 TypeScript 考虑到了“鸭子类型”机制，当我们循环传入参数的属性时，我们可能会遇到 `x`、`y`、`z` 之外的属性，而这些属性的值我们不能确定，因此就是隐含的 `any` 类型。
+
+更合理的实现方式是我们只操作我们可以明确类型的属性，像这样：
+
+```typescript
+function calculateLengthL1(v: Vector3D) {
+  return Math.abs(v.x) + Math.abs(v.y) + Math.abs(v.z);
+}
+```
+
+需要额外注意的是，以上说明的“鸭子类型”机制，在使用类时也同样适用：
+
+```typescript
+class C {
+  foo: string;
+  constructor(foo: string) {
+    this.foo = foo;
+  }
+}
+const c = new C("instance of C");
+const d: C = { foo: "object literal" }; // OK!
+```
