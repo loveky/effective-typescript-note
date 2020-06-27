@@ -18,6 +18,8 @@
 
 第二章 TypeScript 的类型系统
 
+- [06. 利用编辑器探索类型系统](#06-利用编辑器探索类型系统)
+
 ## 正文
 
 ### 01. 理解 TypeScript 与 JavaScript 之间的关系
@@ -469,3 +471,20 @@ const d: C = { foo: "object literal" }; // OK!
 - 该变量在 IDE 中不再享受任何语言服务（智能提示、一键重构等）。
 - 在重构代码时，容易引入 Bug。
 - 从长远来讲，任用 `any` 类型会打击团队成员对代码质量的信心。团队成员在开发时不得不一边修复类型错误，一边在大脑里记住变量的真实类型。
+
+### 06. 利用编辑器探索类型系统
+
+在安装 TypeScript 时，我们实际上安装了两个可执行文件：
+
+- tsc - TypeScript 编译器
+- tsserver - TypeScript 语言服务
+
+通常我们直接使用 `tsc` 来编译代码，而很少用到 `tsserver`。实际上编辑器针对 TypeScript 提供的代码补全、类型展示、跳转以及重构等进阶功能都是倚赖 `tsserver` 实现的。
+
+在使用 VS Code 打开一个 TypeScript 项目时，在底部状态栏左侧可以看到 TypeScript 语言服务启动的提示。
+
+![VS Code 的 TypeScript 语言服务启动中](./assets/2.png)
+
+在 VS Code 的右下角可以查看当前启用的 TypeScript 版本：
+
+![查看当前使用的 TypeScript 版本](./assets/3.png)
