@@ -19,6 +19,7 @@
 第二章 TypeScript 的类型系统
 
 - [06. 利用编辑器探索类型系统](#06-利用编辑器探索类型系统)
+- [07. 把类型看做值的集合](#07-把类型看做值的集合)
 
 ## 正文
 
@@ -488,3 +489,123 @@ const d: C = { foo: "object literal" }; // OK!
 在 VS Code 的右下角可以查看当前启用的 TypeScript 版本：
 
 ![查看当前使用的 TypeScript 版本](./assets/3.png)
+
+### 07. 把类型看做值的集合
+
+在运行时，每一个变量都会有一个从 JavaScript 全部值范围中选择的具体值。但当 TypeScript 检查代码中的类型错误时，变量有的只是一个**类型**。我们可以把该类型视为变量**所有可能取值的集合**。这个集合被称为类型的“域”。举个例子，我们可以把 `number` 类型看做是全部数字的集合。`42` 与 `-37.25` 都在这个集合中，但 `'Canada'` 不在。取决于 `strictNullChecks` 选项的值，`null` 和 `undefined` 可能在也可能不在这个集合中。
+
+最小的集合是空集合，也就是不包含任何值。这对应 TypeScript 中的 `never` 类型。任何值都不能赋值给一个类型是 `never` 的变量。
+
+```typescript
+const x: never = 12;
+//    ~ Type '12' is not assignable to type 'never'
+```
+
+接下来的最小集合是那些只包含单个值的集合。这对应 TypeScript 中的字面量类型，也被称为单位类型(unit types)。
+
+```typescript
+type A = "A";
+type B = "B";
+```
+
+要创建一个包含两个或三个值的类型，你可以合并这些字面量类型：
+
+```typescript
+typeAB = "A" | "B";
+typeAB12 = "A" | "B" | 12;
+```
+
+单词 “assignable(可赋值)” 经常出现在各种 TypeScript 错误中。在值的集合的上下文中，它表示 “X 是 Y 的成员”（用于值和类型之间的关系）或 “X 是 Y 的子集”（用于两种类型之间的关系）:
+
+```typescript
+const a: AB = "A"; // ✅ 值 'A' 是集合 {'A', 'B'} 的一个成员
+const c: AB = "C";
+//    ~ Type '"C"' is not assignable to type 'AB'
+```
+
+要声明一个类型，我们要么通过明确列出所有的可能值：
+
+```typescript
+type Int = 1 | 2 | 3 | 4 | 5;
+```
+
+要么通过描述这些值的成员属性：
+
+```typescript
+interface Identified {
+  id: string;
+}
+```
+
+可以把接口想象成是对它值集合成员的描述。如果一个对象有 `id` 属性且值是 `string` 类型，那么它就是 `Identified` 所表示的集合中的一员。
+
+把类型想象成值的集合有助于我们理解对类型的操作。`&` 操作符表示两个类型的交集。
+
+```typescript
+interface Person {
+  name: string;
+}
+interface Lifespan {
+  birth: Date;
+  death?: Date;
+}
+type PersonSpan = Person & Lifespan;
+```
+
+想想看 `PersonSpan` 类型对应的值的集合中都包含哪些值？它包含的是既在 `Person` 类型的值集合中又在 `Lifespan` 类型的值集合中的值。进一步的，我们可以确定是那些同时拥有 `name`，`birth`，`death` 属性的对象。
+
+再看看两个类型的并集：
+
+```typescript
+type K = keyof (Person | Lifespan);
+```
+
+类型 `K` 表示的集合中都有哪些值呢？首先 `Person | Lifespan` 表示 `Person` 与 `Lifespan` 的并集，这里包含了双方集合的全部值。接着 `keyof` 运算符表示我们想要取得这个并集中**全部对象所共有**的属性。显然根据两个类型的定义，他们之间没有公共属性。因此 `K` 表示的类型就是 `never`。
+
+以上讨论的逻辑可以表示为：
+
+```typescript
+keyof (A&B) = (keyof A) | (keyof B)
+keyof (A|B) = (keyof A) & (keyof B)
+```
+
+另一种声明 `PersonSpan` 类型的方式是利用 `extends` 操作符：
+
+```typescript
+interface Person {
+  name: string;
+}
+interface PersonSpan extends Person {
+  birth: Date;
+  death?: Date;
+}
+```
+
+这里 `extends` 表达的语义可以从两个视角来解释：
+
+- 从继承角度，`PersonSpan` 从 `Person` 继承了 `name` 属性并新增了 `birth` 属性。
+- 从集合角度，我们可以说 `PersonSpan` 是 `Person` 表达的集合中所有拥有 `birth` 属性的成员形成的一个**子集**。
+
+我们可以通过两种不同的关系图来看待这两个视角：
+
+假设有:
+
+```typescript
+interface Vector1D {
+  x: number;
+}
+interface Vector2D extends Vector1D {
+  y: number;
+}
+interface Vector3D extends Vector2D {
+  z: number;
+}
+```
+
+基于“继承”或是“集合”两个角度，我们可以画出两种关系图。
+
+<img src="./assets/4.png" width="300" />
+
+在实际场景中，从集合的角度出发更具“普适性”与“表现力”。因为很多不适用于”继承“的场景，依然可以通过集合的角度很好的表达。比如对 `string|number` 和 `string|Date` 进行 `&` 操作的结果，可以通过集合的方式很直观的展示出来：
+
+<img src="./assets/5.png" width="300" />
