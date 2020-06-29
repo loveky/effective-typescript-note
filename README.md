@@ -20,6 +20,7 @@
 
 - [06. 利用编辑器探索类型系统](#06-利用编辑器探索类型系统)
 - [07. 把类型看做值的集合](#07-把类型看做值的集合)
+- [8. 学会判断一个符号是在类型空间还是值空间](#8-学会判断一个符号是在类型空间还是值空间)
 
 ## 正文
 
@@ -609,3 +610,101 @@ interface Vector3D extends Vector2D {
 在实际场景中，从集合的角度出发更具“普适性”与“表现力”。因为很多不适用于”继承“的场景，依然可以通过集合的角度很好的表达。比如对 `string|number` 和 `string|Date` 进行 `&` 操作的结果，可以通过集合的方式很直观的展示出来：
 
 <img src="./assets/5.png" width="300" />
+
+### 8. 学会判断一个符号是在类型空间还是值空间
+
+在 TypeScript 中存在两个空间：
+
+- 类型空间
+- 值空间
+
+一个符号可以同时出现在这两个空间里，它在不同空间中表达的含义完全不同：
+
+```typescript
+interface Cylinder {
+  radius: number;
+  height: number;
+}
+const Cylinder = (radius: number, height: number) => ({ radius, height });
+```
+
+`interface Cylinder` 在类型空间引入一个符号。`const Cylinder` 在值空间引入相同名字的符号。它们二者之间没有任何联系。TypeScript 会根据上下文来确定这个符号表示的具体含义。
+
+```typescript
+function calculateVolume(shape: unknown) {
+  if (shape instanceof Cylinder) {
+    shape.radius;
+    //    ~~~~~~ Property 'radius' does not exist on type '{}'
+  }
+}
+```
+
+由于 `instanceof` 是一个 JavaScript 运行时操作符，它只能操作“值”，因此这里的 `Cylinder` 表示的是我们定义的函数，而不是类型。
+
+如果你不能一眼看出某个符号存在于类型空间还是值空间，那么可以利用 [TypeScript Playground](https://www.typescriptlang.org/play) 这个工具。
+
+<img src="./assets/6.png" width="500" />
+
+由于在编译过程中类型信息会被移除，如果一个符号在编译结果中消失了，那么它很可能就存在于类型空间里。
+
+TypeScript 中的语句可能会跨越两种空间。
+
+```typescript
+const p: Person = { first: "Jane", last: "Jacobs" };
+//    -           --------------------------------- 值空间
+//       ------ 类型空间
+```
+
+`class` 与 `enum` 会同时引入类型与值。在第一个例子中，如果我们把 `Cylinder` 定义为一个类：
+
+```typescript
+class Cylinder {
+  radius = 1;
+  height = 1;
+}
+function calculateVolume(shape: unknown) {
+  if (shape instanceof Cylinder) {
+    shape; // ✅ 类型是 Cylinder
+    shape.radius; // ✅ 类型是 number
+  }
+}
+```
+
+类引入的 TypeScript 类型是由它的属性与方法决定的。类引入的值就是它的构造函数。
+
+许多运算符在不同上下文中有不同的语义，以 `typeof` 为例：
+
+```typescript
+interface Person {
+  first: string;
+  last: string;
+}
+const p: Person = { first: "Jane", last: "Jacobs" };
+
+function email(p: Person, subject: string, body: string): Response {}
+
+type T1 = typeof p; // 取变量 p 的 TypeScript 类型，得到 Person
+type T2 = typeof email; // 取函数 email 的 TypeScript 类型，得到 (p: Person, subject: string, body: string) => Response
+const v1 = typeof p; // 取变量 p 的运行时类型(JavaScript 类型)，得到 "object"
+const v2 = typeof email; // 取函数 email 的运行时类型(JavaScript 类型)，得到 "function"
+```
+
+对类进行 `typeof` 操作时，基于上下文我们有:
+
+```typescript
+const v = typeof Cylinder; // 取类 Cylinder 的运行时类型(JavaScript 类型)，也就是构造函数的 JavaScript 类型，得到 "function"
+type T = typeof Cylinder; // 取类 Cylinder 的 TypeScript 类型，得到 typeof Cylinder。注意不是 Cylinder, Cylinder 只是该类的实例的类型。
+```
+
+如果你想通过 `Cylinder` 的类型取得该类实例的类型，你可以使用泛型 `InstanceType`:
+
+```typescript
+type C = InstanceType<typeof Cylinder>; // C 的类型就是 Cylinder
+```
+
+除了 `typeof` 以外，还有很多其他的关键字/运算符在不同上下文中拥有不同的含义：
+
+- `this` 在值空间中表示 JavaScript 的 `this` 关键字。作为类型，`this` 表示“多态 this” 类型。这对于使用子类实现方法链很有帮助。
+- 在值空间，`&` 和 `|` 表示位运算符。在类型空间，它们表示交集与并集操作。
+- `const` 在值空间会创建一个新变量，而 [`as const` 断言](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-4.html#const-assertions)会改变一个字面量的推断类型。
+- `extends` 可以用来定义子类(`class A extends B`)，子类型(`interface A extends B`)或是给泛型增加约束条件(`Generic<T extends number>`)。
