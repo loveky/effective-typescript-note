@@ -21,6 +21,7 @@
 - [06. 利用编辑器探索类型系统](#06-利用编辑器探索类型系统)
 - [07. 把类型看做值的集合](#07-把类型看做值的集合)
 - [08. 学会判断一个符号是在类型空间还是值空间](#08-学会判断一个符号是在类型空间还是值空间)
+- [09. 优先使用类型声明而不是类型断言](#09-优先使用类型声明而不是类型断言)
 
 ## 正文
 
@@ -708,3 +709,84 @@ type C = InstanceType<typeof Cylinder>; // C 的类型就是 Cylinder
 - 在值空间，`&` 和 `|` 表示位运算符。在类型空间，它们表示交集与并集操作。
 - `const` 在值空间会创建一个新变量，而 [`as const` 断言](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-4.html#const-assertions)会改变一个字面量的推断类型。
 - `extends` 可以用来定义子类(`class A extends B`)，子类型(`interface A extends B`)或是给泛型增加约束条件(`Generic<T extends number>`)。
+
+### 09. 优先使用类型声明而不是类型断言
+
+要在 TypeScript 中给一个变量赋值同时指定其类型有两种方式：
+
+```typescript
+interface Person {
+  name: string;
+}
+const alice: Person = { name: "Alice" }; // Type is Person
+const bob = { name: "Bob" } as Person; // Type is Person
+```
+
+虽然结果上看起来一样，但在执行流程上有很大不同。前者(类型声明)首先给变量指定类型，然后会检查即将赋的值确保它符合指定的类型。后者(类型断言)则是告诉 TypeScript 虽然它推断出来值的类型是 `A`，但我们要把这个值当成类型 `B` 使用(**注意这里 `A` 与 `B` 之间是有约束条件的，要么 `A` 是 `B` 的子类型，要么`B` 是 `A` 的子类型**)。
+
+总的来说，**应该始终优先使用类型声明而不是类型断言**。因为类型声明总是会进行严格的类型检查，而类型断言会在某些场景会忽略一部分类型错误。
+
+例如：
+
+```typescript
+const alice: Person = {};
+//    ~~~~~ Property 'name' is missing in type '{}'
+//          but required in type 'Person'
+const bob = {} as Person; // 这里不会报错！！
+```
+
+以及：
+
+```typescript
+const alice: Person = {
+  name: "Alice",
+  occupation: "TypeScript developer",
+  // ~~~~~~~~~ Object literal may only specify known properties
+  //           and 'occupation' does not exist in type 'Person'
+};
+const bob = {
+  name: "Bob",
+  occupation: "JavaScript developer",
+} as Person; // 这里不会报错！！
+```
+
+再来看类型断言的约束，举个例子：
+
+```typescript
+interface Person {
+  name: string;
+}
+const body = document.body;
+const el = body as Person;
+//         ~~~~~~~~~~~~~~ Conversion of type 'HTMLElement' to type 'Person'
+//                        may be a mistake because neither type sufficiently
+//                        overlaps with the other. If this was intentional,
+//                        convert the expression to 'unknown' first
+```
+
+因为 `HTMLElement` 与 `Person` 两个类型并不满足其中一个是另一个子类型的约束条件，因此不能直接使用类型断言进行类型转换。如果一定要这样赋值，可以通过先转换为 `unknown` 类型的方式实现：
+
+```typescript
+const el = (document.body as unknown) as Person; // 虽然这样不会报错，但在实际使用中强烈不推荐这样做。
+```
+
+类型断言还有一种叫做“非 `null`” 断言的特殊形式。
+
+```typescript
+const elNull = document.getElementById("foo"); // Type is HTMLElement | null
+const el = document.getElementById("foo")!; // Type is HTMLElement
+```
+
+给一个变量或表达式结尾加一个 `!`，相当于告诉 TypeScript 它的值一定不是 `null`。需要注意的是这只是给类型检查器**在静态类型检查阶段**的一个提示，在运行时是否会出现 `null` 值 TypeScript 是无法保证的，这需要由开发人员在业务逻辑中保证。
+
+最后，看一个适用于类型断言的场景：
+
+```typescript
+document.querySelector("#myButton")!.addEventListener("click", (e) => {
+  e.currentTarget; // Type is EventTarget
+  const button = e.currentTarget as HTMLButtonElement;
+  button; // Type is HTMLButtonElement
+});
+```
+
+由于 TypeScript 无法访问 DOM，因此它无法知道 `#myButton` 是一个 `button` 元素。这时候我们可通过类型断言来明确 `currentTarget` 的类型，方便后续对其操作。
