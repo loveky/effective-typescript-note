@@ -22,7 +22,7 @@
 - [07. 把类型看做值的集合](#07-把类型看做值的集合)
 - [08. 学会判断一个符号是在类型空间还是值空间](#08-学会判断一个符号是在类型空间还是值空间)
 - [09. 优先使用类型声明而不是类型断言](#09-优先使用类型声明而不是类型断言)
-- [10. 避免使用对象包装器类型(String, Number, Boolean, Symbol, BigInt)](<#10-避免使用对象包装器类型(String,-Number,-Boolean,-Symbol,-BigInt)>)
+- [10. 避免使用对象包装器类型(String, Number, Boolean, Symbol, BigInt)](#10-避免使用对象包装器类型string-number-boolean-symbol-bigint)
 
 ## 正文
 
