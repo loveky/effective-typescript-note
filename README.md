@@ -22,6 +22,7 @@
 - [07. 把类型看做值的集合](#07-把类型看做值的集合)
 - [08. 学会判断一个符号是在类型空间还是值空间](#08-学会判断一个符号是在类型空间还是值空间)
 - [09. 优先使用类型声明而不是类型断言](#09-优先使用类型声明而不是类型断言)
+- [10. 避免使用对象包装器类型(String, Number, Boolean, Symbol, BigInt)](<#10-避免使用对象包装器类型(String,-Number,-Boolean,-Symbol,-BigInt)>)
 
 ## 正文
 
@@ -790,3 +791,76 @@ document.querySelector("#myButton")!.addEventListener("click", (e) => {
 ```
 
 由于 TypeScript 无法访问 DOM，因此它无法知道 `#myButton` 是一个 `button` 元素。这时候我们可通过类型断言来明确 `currentTarget` 的类型，方便后续对其操作。
+
+# 10. 避免使用对象包装器类型(String, Number, Boolean, Symbol, BigInt)
+
+除了对象以外，JavaScript 中还有 7 种原始值：string，number，boolean，null，undefined，symbol 和 bigint。其中前 5 种自 JavaScript 诞生之日起就存在，symbol 在 ES2015 中被引入，bigint 还在敲定中。
+
+原始值与对象的区别在于它们不可变且没有方法。在我们的日常开发中可能这样写过：
+
+```javascript
+> 'primitive'.charAt(3)
+"m"
+```
+
+但实际的执行逻辑和我们直观看到的并不相同。虽然 string 原始值没有方法，但 JavaScript 中还存在一种与之对应的 **String** 对象类型。当我们在一个 string 原始值上调用方法时，JavaScript 会把它包装成一个 String 对象，执行相应的方法最后将这个临时创建的包装对象销毁。
+
+可以通过以下这段代码体会这个流程：
+
+```javascript
+const originalCharAt = String.prototype.charAt;
+String.prototype.charAt = function (pos) {
+  console.log(this, typeof this, pos);
+  return originalCharAt.call(this, pos);
+};
+console.log("primitive".charAt(3));
+```
+
+这段代码会输出：
+
+```javascript
+String {"primitive"} "object" 3
+```
+
+理解这个逻辑后，就不难理解下面这段代码的输出：
+
+```javascript
+> x = "hello"
+> x.language = 'English'
+'English'
+> x.language
+undefined
+```
+
+对象包装器类型存在的意义在于为原始值提供方法调用以及提供静态方法(例如 `String.fromCharCode`)。通常我们不需要直接创建这些对象的实例。
+
+TypeScript 针对原始值和包装器提供了两种 TypeScript 类型：
+
+- string 与 String
+- number 与 Number
+- boolean 与 Boolean
+- symbol 与 Symbol
+- bigint 与 BigInt
+
+以 string 和 String 说明这两类类型之间的关系：
+
+**string 类型可以赋值给 String 类型**，因为在 JavaScript 针对原始值存在隐式的对象包装，所以这种赋值是合法的：
+
+```typescript
+function getStringLen(foo: String) {
+  return foo.length;
+}
+getStringLen("hello"); // ✅
+getStringLen(new String("hello")); // ✅
+```
+
+反之，**由 String 类型赋值给 string 类型是不被允许的**：
+
+```typescript
+function isGreeting(phrase: String) {
+  return ["hello", "good day"].includes(phrase);
+  //                                    ~~~~~~
+  //                                    Argument of type 'String' is not assignable to parameter // of type 'string'.
+  //                                    'string' is a primitive, but 'String' is a wrapper object; // prefer using 'string' when possible
+}
+```
