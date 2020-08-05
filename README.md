@@ -23,6 +23,7 @@
 - [08. 学会判断一个符号是在类型空间还是值空间](#08-学会判断一个符号是在类型空间还是值空间)
 - [09. 优先使用类型声明而不是类型断言](#09-优先使用类型声明而不是类型断言)
 - [10. 避免使用对象包装器类型(String, Number, Boolean, Symbol, BigInt)](#10-避免使用对象包装器类型string-number-boolean-symbol-bigint)
+- [11. 认识多余属性检查的局限性](#11-认识多余属性检查的局限性)
 
 ## 正文
 
@@ -864,3 +865,103 @@ function isGreeting(phrase: String) {
   //                                    'string' is a primitive, but 'String' is a wrapper object; // prefer using 'string' when possible
 }
 ```
+
+### 11. 认识多余属性检查的局限性
+
+当把一个对象字面量赋值给一个已声明类型的变量时，TypeScript 会确保该对象字面量的属性与该变量的类型上的属性完全一致（不多也不少）：
+
+```typescript
+interface Room {
+  numDoors: number;
+  ceilingHeightFt: number;
+}
+const r: Room = {
+  numDoors: 1,
+  ceilingHeightFt: 10,
+  elephant: "present",
+  // ~~~~~~~~~~~~~~~~~~ Object literal may only specify known properties,
+  //                    and 'elephant' does not exist in type 'Room'
+};
+```
+
+这个报错从[结构化类型](#04-理解-TypeScript-中的结构化类型)的角度看似乎说不通。因为如果我们引入一个中间变量，这个赋值操作是不会报错的：
+
+```typescript
+const obj = { numDoors: 1, ceilingHeightFt: 10, elephant: "present" };
+const r: Room = obj; // ✅
+```
+
+在这第二个例子中，`obj` 的类型被 TypeScript 推断为 `{ numDoors: number; ceilingHeightFt: number; elephant: string }`。由于它所代表的值域是 `Room` 类型所代表值域的一个子集，所以这个赋值操作通过了 TypeScript 的类型检查。
+
+这两个例子有什么不同呢？在第一个例子中我们触发了一个被称为“多余属性检查”的机制，该机制有助于捕获一类结构类型系统很容易遗漏的错误。但是由于该机制的局限性，把它和常规的赋值检查混为一谈会使我们建立起针对结构化类型的直观理解变得更困难。把“多余属性检查”视作一个独立流程有助于我们更清晰的认识建 TypeScript 的类型系统。
+
+正如我们在[第一节](#01-理解-TypeScript-与-JavaScript-之间的关系)中介绍的那样，TypeScript 不仅尝试找出在运行时会引发异常的代码，它还会尝试找出与你期望行为不符的代码。下面是一个例子：
+
+```typescript
+interface Options {
+  title: string;
+  darkMode?: boolean;
+}
+function createWindow(options: Options) {
+  if (options.darkMode) {
+    setDarkMode();
+  }
+  // ...
+}
+createWindow({
+  title: "Spider Solitaire",
+  darkmode: true,
+  // ~~~~~~~~~~~~~ Object literal may only specify known properties, but
+  // 'darkmode' does not exist in type 'Options'.
+  // Did you mean to write 'darkMode'?
+});
+```
+
+虽然这段代码在运行时并不会产生任何错误，但它也并不是我们实际想要执行的逻辑。正如 TypeScript 提示的那样，应该是 `darkMode` 而不是 `darkmode`。
+
+一个纯粹的结构化类型检查器并不能支出这类错误，因为 `Options` 类型的值域非常广泛：它包含了任何有一个名为 `title` 值为 `string` 类型的对象。
+
+下面是一些其它可以赋值给 `Options` 类型的值:
+
+```typescript
+const o1: Options = document; // ✅
+const o2: Options = new HTMLAnchorElement(); // ✅
+```
+
+`document` 和 `HTMLAnchorElement` 实例都有一个名为 `title` 值类型是 `string` 的属性，所以这两个赋值操作都不会报错。
+
+多余属性检查试图控制这种情况而同时又不损坏类型系统底层结构类型的本质。**TypeScript 通过明确禁止对象字面量上的未知属性来实现这一目的。（有时也被称为“严格对象字面量检查”）**`document` 和 `new HTMLAnchorElement` 都不是对象字面量，因此不会触发该检查。这也解释了为何引入一个中间变量后就不会提示类型错误。
+
+此外，当使用类型断言时，多余属性检查也不会被触发，因此你可以：
+
+```typescript
+const o = { darkmode: true, title: "Ski Free" } as Options; // ✅
+```
+
+这也是一个应该优先使用类型声明而不是类型断言的原因。
+
+如果不想让 TypeScript 进行此类检查，你可以通过增加索引签名来告诉 TypeScript 允许出现未知属性：
+
+```typescript
+interface Options {
+  darkMode?: boolean;
+  [otherOptions: string]: unknown;
+}
+const o: Options = { darkmode: true }; // OK
+```
+
+针对只包含可选属性的“弱”类型，有一个类似的检查：
+
+```typescript
+interface LineChartOptions {
+  logscale?: boolean;
+  invertedYAxis?: boolean;
+  areaChart?: boolean;
+}
+const opts = { logScale: true };
+const o: LineChartOptions = opts;
+//    ~ Type '{ logScale: boolean; }' has no properties in common
+//    with type 'LineChartOptions'
+```
+
+从结构化的角度看，`LineChartOptions` 类型应该包含全部对象。**针对这类的弱类型，TypeScript 会进行额外的检查以确保值类型和声明的类型之间至少有一个相同的属性。**和多余属性检查一样，这么做也是为了防止属性名的拼写错误。**和多余属性检查不同的地方在于任何涉及到弱类型的赋值操作都会触发该检查，使用中间变量并不会绕过该检查。**
