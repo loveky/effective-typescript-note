@@ -25,6 +25,7 @@
 - [10. 避免使用对象包装器类型(String, Number, Boolean, Symbol, BigInt)](#10-避免使用对象包装器类型string-number-boolean-symbol-bigint)
 - [11. 认识多余属性检查的局限性](#11-认识多余属性检查的局限性)
 - [12. 在可能的时候为整个函数表达式应用类型](#12-在可能的时候为整个函数表达式应用类型)
+- [13. 理解 `type` 和 `interface` 的区别](#13-理解-type-和-interface-的区别)
 
 ## 正文
 
@@ -1095,3 +1096,116 @@ const checkedFetch: typeof fetch = async (input, init) => {
   return response;
 };
 ```
+
+### 13. 理解 `type` 和 `interface` 的区别
+
+要在 TypeScript 定义一个命名的类型有两种方式，使用 `type` 或是 `interface`:
+
+```typescript
+type TState = { name: string; capital: string };
+
+interface IState {
+  name: string;
+  capital: string;
+}
+```
+
+#### 二者在绝大多数使用场景中是可以互换的
+
+##### 二者都可以添加索引签名
+
+```typescript
+type TDict = { [key: string]: string };
+interface IDict {
+  [key: string]: string;
+}
+```
+
+##### 二者都可以定义函数类型
+
+```typescript
+type TFn = (x: number) => string;
+interface IFn {
+  (x: number): string;
+}
+const toStrT: TFn = (x) => "" + x; // ✅
+const toStrI: IFn = (x) => "" + x; // ✅
+```
+
+##### 二者都可以使用泛型
+
+```typescript
+type TPair<T> = { first: T; second: T };
+interface IPair<T> {
+  first: T;
+  second: T;
+}
+```
+
+##### 二者可以互相扩展
+
+```typescript
+interface IStateWithPop extends TState {
+  population: number;
+}
+type TStateWithPop = IState & { population: number };
+```
+
+#### 二者之间也有少量不同点
+
+##### `union` 类型只能使用 `type` 声明
+
+```typescript
+type AorB = "a" | "b";
+```
+
+##### 涉及数组的类型使用 `type` 可能会更方便
+
+假设有类型：
+
+```typescript
+type Pair = [number, number];
+```
+
+如果使用 `interface` 该如何描述这个结构呢？我们可能会写：
+
+```typescript
+interface Tuple {
+  0: number;
+  1: number;
+  length: 2;
+}
+const t: Tuple = [10, 20]; // ✅
+```
+
+使用 `interface` 描述的缺点就是这样声明出来的类型会丢失所有原有数组类型自带的方法，比如 `concat` 等。
+
+##### `interface` 支持声明合并
+
+TypeScript 会自动合并针对同一 `interface` 的多次声明：
+
+```typescript
+interface IState {
+  name: string;
+  capital: string;
+}
+interface IState {
+  population: number;
+}
+const wyoming: IState = {
+  name: "Wyoming",
+  capital: "Cheyenne",
+  population: 500_000,
+}; // ✅
+```
+
+关于声明合并可以参考这篇[官方文档](https://www.typescriptlang.org/docs/handbook/declaration-merging.html)。声明合并的好处是它给了我们对类型的编辑能力。
+
+假设你是一个框架/库的开发人员，如果你期望用户在使用过程中可以扩展类库的能力，那么你应该考虑使用 `interface` 以保留类型信息的扩展能力。
+
+#### 该选择 `interface` 还是 `type` ?
+
+1. 与项目现有风格保持一致
+2. 如果项目原有代码没有统一风格，那么考虑具体场景：  
+   2.1 如果你是为一个发布给其他人使用的 API 编写类型定义，那么考虑到后续的扩展性，可以考虑使用 `interface`  
+   2.2 对于项目内部使用的类型，类型合并通常是由于编码错误导致的，所以可以优先使用 `type`
