@@ -24,6 +24,7 @@
 - [09. 优先使用类型声明而不是类型断言](#09-优先使用类型声明而不是类型断言)
 - [10. 避免使用对象包装器类型(String, Number, Boolean, Symbol, BigInt)](#10-避免使用对象包装器类型string-number-boolean-symbol-bigint)
 - [11. 认识多余属性检查的局限性](#11-认识多余属性检查的局限性)
+- [12. 在可能的时候为整个函数表达式应用类型](#12-在可能的时候为整个函数表达式应用类型)
 
 ## 正文
 
@@ -965,3 +966,132 @@ const o: LineChartOptions = opts;
 ```
 
 从结构化的角度看，`LineChartOptions` 类型应该包含全部对象。**针对这类的弱类型，TypeScript 会进行额外的检查以确保值类型和声明的类型之间至少有一个相同的属性。**和多余属性检查一样，这么做也是为了防止属性名的拼写错误。**和多余属性检查不同的地方在于任何涉及到弱类型的赋值操作都会触发该检查，使用中间变量并不会绕过该检查。**
+
+### 12. 在可能的时候为整个函数表达式应用类型
+
+JavaScript（以及 TypeScript）中有两种定义函数的方式，函数**声明**与函数**表达式**：
+
+```typescript
+function rollDice1(sides: number): number {
+  /* ... */
+} // 声明
+const rollDice2 = function (sides: number): number {
+  /* ... */
+}; // 表达式
+const rollDice3 = (sides: number): number => {
+  /* ... */
+}; // 表达式
+```
+
+函数表达式的一个优势是你可以一次性为整个函数指定类型，而不是分别为每个参数、返回值声明类型：
+
+```typescript
+type DiceRollFn = (sides: number) => number;
+const rollDice: DiceRollFn = (sides) => {
+  /* ... */
+};
+```
+
+一次性为函数表达式指定类型的好处是减少重复，假设我们有一组数学计算相关的函数:
+
+```typescript
+function add(a: number, b: number) {
+  return a + b;
+}
+function sub(a: number, b: number) {
+  return a - b;
+}
+function mul(a: number, b: number) {
+  return a * b;
+}
+function div(a: number, b: number) {
+  return a / b;
+}
+```
+
+你可以利用函数表达式简化大部分函数参数与返回值的签名：
+
+```typescript
+type BinaryFn = (a: number, b: number) => number;
+const add: BinaryFn = (a, b) => a + b;
+const sub: BinaryFn = (a, b) => a - b;
+const mul: BinaryFn = (a, b) => a * b;
+const div: BinaryFn = (a, b) => a / b;
+```
+
+很多框架/库会提供常用函数类型的声明。例如，ReactJS 提供了一个 `MouseEventHandler` 类型，这样你就不必显式的将函数参数声明为 `MouseEvent` 类型。如果你是一个框架/库的开发人员，那么你也应该考虑提供类似的类型声明。
+
+为函数表达式指定类型的另一个使用场景是当你想封装一个已有函数并使封装的函数和原函数保持一致签名的时候。举个例子，浏览器中的 `fetch` 方法用于发起 HTTP 请求：
+
+```typescript
+const responseP = fetch("/quote?by=Mark+Twain"); // 类型是 Promise<Response>
+```
+
+然后通过 `response.json()` 或 `response.text()` 取出返回的数据：
+
+```typescript
+async function getQuote() {
+  const response = await fetch("/quote?by=Mark+Twain");
+  const quote = await response.json();
+  return quote;
+}
+// {
+// "quote": "If you tell the truth, you don't have to remember anything.",
+//   "source": "notebook",
+//   "date": "1894"
+// }
+```
+
+这里有一个问题，如果请求失败，那么返回体中很可能会包含一段服务器返回的解释文案，比如：“404 Not Found”。这不是一个合法的 JSON 字符串，因此 `response.json()` 会返回一个内容为“不合法 JSON” 的 rejected Promise，这回导致我们看不到原始的 404 信息。
+
+于是我们参考 `lib.dom.d.ts` 中 `fetch` 方法的签名
+
+```typescript
+declare function fetch(
+  input: RequestInfo,
+  init?: RequestInit
+): Promise<Response>;
+```
+
+对该方法进行封装：
+
+```typescript
+async function checkedFetch(input: RequestInfo, init?: RequestInit) {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    // 手动转换为一个 rejected Promsie 并保留原始信息
+    throw new Error("Request failed: " + response.status);
+  }
+  return response;
+}
+```
+
+这段代码可以工作，但其实我们可以把它写的更精确：
+
+```typescript
+const checkedFetch: typeof fetch = async (input, init) => {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    throw new Error("Request failed: " + response.status);
+  }
+  return response;
+};
+```
+
+使用函数表达式的第一个好处是我们不再需要为 `input`, `init` 参数以及函数返回值明确标明类型。第二个不太明显但更重要的好处是 TypeScript 会确保我们的新方法和 `fetch` 有着完全一致的签名。
+
+比如，我们把 `throw new Error` 误写成 `return new Error`，TypeScript 就可以检测到这个错误并给出准确提示：
+
+```typescript
+const checkedFetch: typeof fetch = async (input, init) => {
+  //  ~~~~~~~~~~~~ Type 'Promise<Response | HTTPError>'
+  //               is not assignable to type 'Promise<Response>'
+  //               Type 'Response | HTTPError' is not assignable
+  //               to type 'Response'
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    return new Error("Request failed: " + response.status);
+  }
+  return response;
+};
+```
