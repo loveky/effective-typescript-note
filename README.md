@@ -26,6 +26,7 @@
 - [11. 认识多余属性检查的局限性](#11-认识多余属性检查的局限性)
 - [12. 在可能的时候为整个函数表达式应用类型](#12-在可能的时候为整个函数表达式应用类型)
 - [13. 理解 `type` 和 `interface` 的区别](#13-理解-type-和-interface-的区别)
+- [14. 使用类型操作和泛型避免重复代码](#14-使用类型操作和泛型避免重复代码)
 
 ## 正文
 
@@ -1209,3 +1210,301 @@ const wyoming: IState = {
 2. 如果项目原有代码没有统一风格，那么考虑具体场景：  
    2.1 如果你是为一个发布给其他人使用的 API 编写类型定义，那么考虑到后续的扩展性，可以考虑使用 `interface`  
    2.2 对于项目内部使用的类型，类型合并通常是由于编码错误导致的，所以可以优先使用 `type`
+
+### 14. 使用类型操作和泛型避免重复代码
+
+在编写代码时我们通常都会尽可能的遵循 DRY 原则：不要重复自己。这样做会降低重复代码的数量进而提升程序的可维护性。这一原则在编写 TypeScript 类型时也同样适用。
+
+假设我们有类型：
+
+```typescript
+interface Person {
+  firstName: string;
+  lastName: string;
+}
+interface PersonWithBirthDate {
+  firstName: string;
+  lastName: string;
+  birth: Date;
+}
+```
+
+当我们想向 `Person` 类型增加一个可选的 `middleName` 字段时，我们必须同步更新 `PersonWithBirthData`，否则二者的类型就会出现不一致的情况。
+
+在程序代码中我们通常会通过把类似代码提炼成一个函数来达到降低重复代码的目的。那么在类型系统中和函数相对应的是什么呢？通过学习如何在类型间进行映射，我们可以把 DRY 的优点带到类型定义中去。
+
+**减少重复最简单的方法就是给类型命名。**假设有一个 `distance` 函数：
+
+```typescript
+function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
+  return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+}
+```
+
+我们可以为重复的类型声明创建一个命名的类型：
+
+```typescript
+interface Point2D {
+  x: number;
+  y: number;
+}
+function distance(a: Point2D, b: Point2D) {
+  /* ... */
+}
+```
+
+这个操作和我们在编写代码时为一个常量声明一个变量的道理是一样的。重复的类型并不总是容易发现。有是它们可能会被语法掩盖。如果多个函数共享相同的类型签名，比如：
+
+```typescript
+function get(url: string, opts: Options): Promise<Response> {
+  /* ... */
+}
+function post(url: string, opts: Options): Promise<Response> {
+  /* ... */
+}
+```
+
+那么我们可以为这个类型签名提炼出一个命名类型：
+
+```typescript
+type HTTPFunction = (url: string, opts: Options) => Promise<Response>;
+const get: HTTPFunction = (url, opts) => {
+  /* ... */
+};
+const post: HTTPFunction = (url, opts) => {
+  /* ... */
+};
+```
+
+回到 `Person`/`PersonWithBirthDate` 的例子，我们可以通过 `extend` 操作符来消除重复代码。
+
+```typescript
+interface Person {
+  firstName: string;
+  lastName: string;
+}
+interface PersonWithBirthDate extends Person {
+  birth: Date;
+}
+```
+
+使用 `&` 操作符也可以达到同样的效果：
+
+```typescript
+type PersonWithBirthDate = Person & { birth: Date };
+```
+
+这种操作通常用于给 `union` 类型增加额外属性（`extend` 不能用于 `union` 类型）。
+
+我们也可以进行反向操作，假设有一个类型 `State` 用于表示整个应用的状态，以及一个它的子集 `TopNavState`：
+
+```typescript
+interface State {
+  userId: string;
+  pageTitle: string;
+  recentFiles: string[];
+  pageContents: string;
+}
+interface TopNavState {
+  userId: string;
+  pageTitle: string;
+  recentFiles: string[];
+}
+```
+
+与其通过扩展 `TopNavState` 来声明 `State`，我们更愿意把 `TopNavState` 定义为 `State` 的子集。这样我们就可以使用单一的类型来描述应用的完整状态。
+
+我们可以通过索引到 `State` 来消除属性类型的重复：
+
+```typescript
+type TopNavState = {
+  userId: State["userId"];
+  pageTitle: State["pageTitle"];
+  recentFiles: State["recentFiles"];
+};
+```
+
+这样做虽然代码量增加了，但确是一个进步。`State` 上 `pageTitle` 属性类型的改变会自动体现在 `TopNavState` 上。我们可以使用映射类型来进一步减少重复：
+
+```typescript
+type TopNavState = {
+  [k in "userId" | "pageTitle" | "recentFiles"]: State[k];
+};
+```
+
+把鼠标移到 `TopNavState` 上你会发现它的定义和我们之前手动声明的定义是完全一致的。
+
+<img src="./assets/7.png" width="500" />
+
+映射类型的作用就好比是在类型系统中循环遍历数组中的字段。这种模式是如此常见以至于被写入标准库中，名为 `Pick`：
+
+```typescript
+type Pick<T, K> = { [k in K]: T[k] };
+```
+
+（这并不是 `Pick` 的完整定义，我们稍后会继续讨论。）你可以按如下方式使用它：
+
+```typescript
+type TopNavState = Pick<State, "userId" | "pageTitle" | "recentFiles">;
+```
+
+`Pick` 是**泛型**的一种。在类型系统中使用 `Pick` 就好比是一次针对类型的函数调用，传入两个类型，得到一个新类型。
+
+带标签的联合类型会引入另一种形式的重复。我们该如何得到一个用于描述标签的类型呢？
+
+```typescript
+interface SaveAction {
+  type: "save";
+  // ...
+}
+interface LoadAction {
+  type: "load";
+  // ...
+}
+type Action = SaveAction | LoadAction;
+type ActionType = "save" | "load"; // :warning: 重复类型
+```
+
+我们可以使用索引类型来避免重复：
+
+```typescript
+type ActionType = Action["type"];
+```
+
+随着我们不断在 `Action` 联合类型内增加新类型，`ActionType` 总是可以自动更新。需要注意的是，这和使用 `Pick` 得到的类型是不同的，`Pick` 返回的是一个包含 `type` 属性的接口：
+
+```typescript
+type ActionRec = Pick<Action, "type">; // {type: "save" | "load"}
+```
+
+如果要定义一个初始化后可以更新的类，那么 `update` 方法的参数可能会包含大部分构造函数的参数：
+
+```typescript
+interface Options {
+  width: number;
+  height: number;
+  color: string;
+  label: string;
+}
+interface OptionsUpdate {
+  width?: number;
+  height?: number;
+  color?: string;
+  label?: string;
+}
+class UIWidget {
+  constructor(init: Options) {
+    /* ... */
+  }
+  update(options: OptionsUpdate) {
+    /* ... */
+  }
+}
+```
+
+你可以使用 `keyof` 和映射类型来从 `Options` 生成 `OptionsUpdate`：
+
+```typescript
+type OptionsUpdate = { [k in keyof Options]?: Options[k] };
+```
+
+`keyof` 接受一个类型并返回该类型全部属性名组成的联合类型：
+
+```typescript
+type OptionsKeys = keyof Options;
+// Type is "width" | "height" | "color" | "label"
+```
+
+映射类型（`[k in keyof Options]`）会循环遍历 `Options` 上的属性以及它们对应值的类型。`?` 会将每个属性标记为可选的。这一模式同样非常普遍，在标准库中用 `Partial` 表示，所以最开始的代码可以改写为：
+
+```typescript
+class UIWidget {
+  constructor(init: Options) {
+    /* ... */
+  }
+  update(options: Partial<Options>) {
+    /* ... */
+  }
+}
+```
+
+有时你可能想从一个值来生成一个与之对应的类型：
+
+```typescript
+const INIT_OPTIONS = {
+  width: 640,
+  height: 480,
+  color: "#00FF00",
+  label: "VGA",
+};
+interface Options {
+  width: number;
+  height: number;
+  color: string;
+  label: string;
+}
+```
+
+可以这样做：
+
+```typescript
+type Options = typeof INIT_OPTIONS;
+```
+
+类似的，我们可能还想为函数推断出的返回值类型创建一个命名类型：
+
+```typescript
+function getUserInfo(userId: string) {
+  // ...
+  return { userId, name, age, height, weight, favoriteColor };
+}
+// 推断出的返回值类型 { userId: string; name: string; age: number, ... }
+```
+
+标准库为我们提供了 `ReturnType` 泛型：
+
+```typescript
+type UserInfo = ReturnType<typeof getUserInfo>;
+```
+
+值得注意的是，`RetureType` 操作的是函数的类型（`typeof getUserInfo`），而不是函数自身。
+
+泛型好比是类型系统中作用于类型的函数，而函数是减少重复逻辑的关键。因此，泛型也就成了减少类型重复的关键。这个比喻到目前为止还缺少一部分，在函数中我们可以使用类型约束变量的类型，那么我们该如何约束泛型的参数呢？
+
+使用 `extends` 可以达到此目的，我们可以声明任何泛型参数 `extends` 自一个指定类型。例如：
+
+```typescript
+interface Name {
+  first: string;
+  last: string;
+}
+type DancingDuo<T extends Name> = [T, T];
+const couple1: DancingDuo<Name> = [
+  { first: "Fred", last: "Astaire" },
+  { first: "Ginger", last: "Rogers" },
+]; // ✅
+const couple2: DancingDuo<{ first: string }> = [
+  //                      ~~~~~~~~~~~~~~~
+  //                      Property 'last' is missing in type
+  //                      '{ first: string; }' but required in type 'Name'
+  { first: "Sonny" },
+  { first: "Cher" },
+];
+```
+
+现在回顾我们前文提到的 `Pick` 泛型，它其实定义的并不完善，会有类型错误：
+
+```typescript
+type Pick<T, K> = {
+  [k in K]: T[k];
+  //    ~ Type 'K' is not assignable to type 'string | number | symbol'
+};
+```
+
+我们没有给 `K` 加任何限制，但如果要把它作为对象上的索引，它只能是 `string | number | symbol`。更准确的说，`K` 应该是 `T` 属性集合（也就是`keyof T`）的子集。因此，完整版 `Pick` 的定义应该是：
+
+```typescript
+type Pick<T, K extends keyof T> = {
+  [k in K]: T[k];
+};
+```
