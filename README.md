@@ -27,6 +27,7 @@
 - [12. 在可能的时候为整个函数表达式应用类型](#12-在可能的时候为整个函数表达式应用类型)
 - [13. 理解 `type` 和 `interface` 的区别](#13-理解-type-和-interface-的区别)
 - [14. 使用类型操作和泛型避免重复代码](#14-使用类型操作和泛型避免重复代码)
+- [15. 对动态数据使用索引签名](#15-对动态数据使用索引签名)
 
 ## 正文
 
@@ -1507,4 +1508,145 @@ type Pick<T, K> = {
 type Pick<T, K extends keyof T> = {
   [k in K]: T[k];
 };
+```
+
+### 15. 对动态数据使用索引签名
+
+JavaScript 中最好用的特性之一就是其灵活的对象创建语法：
+
+```javascript
+const rocket = { name: "Falcon 9", variant: "Block 5", thrust: "7,607 kN" };
+```
+
+JavaScript 中的对象把字符串映射到任意类型的值。TypeScript 允许我们通过**索引签名**表示此类灵活的映射关系。
+
+```typescript
+type Rocket = { [property: string]: string };
+const rocket: Rocket = {
+  name: "Falcon 9",
+  variant: "v1.0",
+  thrust: "4,940 kN",
+}; // ✅
+```
+
+`[property: string]: string` 就是索引签名。它指定了三件事：
+
+- “键”的名称：纯粹为了文档以及提示信息，类型检查器不会使用这个名字
+- “键”的类型：它应该是 `string`，`number` 或 `symbol` 的某种组合，但通常来说我们只用到 `string`
+- “值”的类型：可以是任意类型
+
+这样写虽然会进行类型检查，但它有几点缺陷：
+
+- 键名可以是任意字符串。你把 `name` 误写成 `Name` 并不会产生类型错误
+- 没有强制任何必须存在的键，`{}` 也是合法的 `Rocket` 类型
+- 对于不同的键不能给对应的值设置不同类型。例如 `thrust`（注：推力） 应该是 `number` 而不是 `string`
+- TypeScript 语言服务不能给你提供智能提示。当你输入 `name:` 时不会有自动补全，因为键名可以是任意字符串
+
+简而言之，索引签名不够精确。通常情况下，总是有更好的选择。在这个例子中，`Rocket` 应该明确是一个 `interface`:
+
+```typescript
+interface Rocket {
+  name: string;
+  variant: string;
+  thrust_kN: number;
+}
+const falconHeavy: Rocket = {
+  name: "Falcon Heavy",
+  variant: "v1",
+  thrust_kN: 15_200,
+};
+```
+
+索引签名有什么使用场景呢？一个比较经典的用法是用来描述动态数据。例如，我们要解析一个 CSV 文件：
+
+```typescript
+function parseCSV(input: string): { [columnName: string]: string }[] {
+  const lines = input.split("\n");
+  const [headerStr, ...rows] = lines;
+  const header = headerStr.split(",");
+  return rows.map((rowStr) => {
+    const row: { [columnName: string]: string } = {};
+    rowStr.split(",").forEach((cell, i) => {
+      row[header[i]] = cell;
+    });
+    return row;
+  });
+}
+```
+
+由于我们实现并不知道文件中有哪些列，所以这里使用了签名索引。如果使用者预先了解更多的上下文，那么他就可以使用类型断言来把返回值转变为更具体的类型：
+
+```typescript
+interface ProductRow {
+  productId: string;
+  name: string;
+  price: string;
+}
+declare let csvData: string;
+const products = (parseCSV(csvData) as unknown) as ProductRow[];
+```
+
+类型断言并不能保证程序在运行时得到的值的数据结构和你期望的完全一致。如果担心这一点，那么可以给值的类型加上 `undefined`:
+
+```typescript
+function safeParseCSV(
+  input: string
+): { [columnName: string]: string | undefined }[] {
+  return parseCSV(input);
+}
+```
+
+这样一来，每次使用索引类型的属性都会进行检查：
+
+```typescript
+const rows = parseCSV(csvData);
+const prices: { [produt: string]: number } = {};
+for (const row of rows) {
+  prices[row.productId] = Number(row.price);
+}
+const safeRows = safeParseCSV(csvData);
+for (const row of safeRows) {
+  prices[row.productId] = Number(row.price);
+  //     ~~~~~~~~~~~~~ Type 'undefined' cannot be used as an index type
+}
+```
+
+这样做也同时增加了工作量，是否要给值增加 `undefined` 类型需要在具体场景中自行判断。
+
+如果明确知道数据上只有有限种类的属性，但是不知道具体有其中几个，那么应该使用**可选字段**或是**联合类型**。举例，假设我们知道对象上可能有 A，B，C，D 四个属性的一个或多个，我们有以下几种方式：
+
+```typescript
+interface Row1 {
+  [column: string]: number;
+} // 太宽泛
+interface Row2 {
+  a: number;
+  b?: number;
+  c?: number;
+  d?: number;
+} // 好一些
+type Row3 =
+  | { a: number }
+  | { a: number; b: number }
+  | { a: number; b: number; c: number }
+  | { a: number; b: number; c: number; d: number }; // 最准确
+```
+
+如果觉得键的类型是 `string` 这一点过于宽泛，可以使用 `Record` 泛型：
+
+```typescript
+type Vec3D = Record<"x" | "y" | "z", number>;
+```
+
+另一种方法是使用映射类型，它允许你针对不同键声明不同类型的值：
+
+```typescript
+type Vec3D = { [k in "x" | "y" | "z"]: number };
+// 和上面定义的一样
+type ABC = { [k in "a" | "b" | "c"]: k extends "b" ? string : number };
+// Type ABC = {
+//   a: number;
+//   b: string;
+//   c: number;
+// }
 ```
