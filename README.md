@@ -28,6 +28,7 @@
 - [13. 理解 `type` 和 `interface` 的区别](#13-理解-type-和-interface-的区别)
 - [14. 使用类型操作和泛型避免重复代码](#14-使用类型操作和泛型避免重复代码)
 - [15. 对动态数据使用索引签名](#15-对动态数据使用索引签名)
+- [16. 优先使用 Array，Tuple 以及 ArrayLike 而不是 number 类型的索引签名](#16-优先使用-Array-Tuple-以及-ArrayLike-而不是-number-类型的索引签名)
 
 ## 正文
 
@@ -1649,4 +1650,88 @@ type ABC = { [k in "a" | "b" | "c"]: k extends "b" ? string : number };
 //   b: string;
 //   c: number;
 // }
+```
+
+### 16. 优先使用 Array，Tuple 以及 ArrayLike 而不是 number 类型的索引签名
+
+JavaScript 中没有类似 Python 或 Java 中”哈希“对象的概念，如果使用一个对象作为键使用，JavaScript 会先调用该对象上的 `toString` 方法来将其转换成字符串：
+
+```javascript
+> x = {}
+{}
+> x[[1, 2, 3]] = 2
+2
+> x
+{ '1,2,3': 1 }
+```
+
+数字也不能直接作为键使用。如果尝试使用数字作为键，JavaScript 运行时也会先将其转变成字符串：
+
+```javascript
+> { 1: 2, 3: 4}
+{ '1': 2, '3': 4 }
+```
+
+JavaScript 中数组也是对象，而且我们日常都是通过数字作为键访问数组。在数组的访问过程中，也有一样的转换。除了数字，我们还可以使用对应的字符串访问数组。
+
+```javascript
+> typeof []
+ 'object'
+> x = [1, 2, 3]
+ [ 1, 2, 3 ]
+> x[0]
+1
+> x['1']
+ 2
+```
+
+使用 `Object.keys` 查看数组的键会发现返回的都是字符串类型。
+
+```typescript
+> Object.keys(x)
+[ '0', '1', '2' ]
+```
+
+TypeScript 试图通过允许使用数字类型的键以区别于字符串来使这一问题变得更清晰。在 TypeScript 中，数组是这样定义的：
+
+```typescript
+interface Array<T> {
+  // ...各种数组方法
+  [n: number]: T;
+}
+```
+
+这只是一个”假象“，或者说是一个 TypeScript 团队认为的最佳实践。如果使用字符串作为键访问数组，往往并不是开发者的本意，更可能是一个编码错误。但正如前面章节提到过的，类型信息在编译阶段会被抹去，代码在运行时还是可以通过字符串访问数组。
+
+```typescript
+const xs = [1, 2, 3];
+const x0 = xs[0]; // ✅
+const x1 = xs["1"];
+//            ~~~ Element implicitly has an 'any' type
+//            because index expression is not of type 'number'
+function get<T>(array: T[], k: string): T {
+  return array[k];
+  //           ~ Element implicitly has an 'any' type
+  //           because index expression is not of type 'number'
+}
+```
+
+有一个小小的例外，以下代码不会产生类型检查错误：
+
+```typescript
+for (const key in xs) {
+  key; // 类型是 string
+  const x = xs[key]; // x 的类型是 number
+}
+```
+
+可以将其视作 TypeScript 对常用的对象遍历写法的一个让步（但这不意味着你应该这样写，遍历数组请优先使用 `for of`、`Array.prototype.forEach` 或是 C-风格的 `for` 循环）。
+
+如果因为数组上存在多余的方法（例如 `forEach`，`pop`）而不能使用数组，可以选择使用 ArrayLike 类型。它的定义如下：
+
+```typescript
+interface ArrayLike<T> {
+  readonly length: number;
+  readonly [n: number]: T;
+}
 ```
