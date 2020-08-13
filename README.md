@@ -29,6 +29,7 @@
 - [14. 使用类型操作和泛型避免重复代码](#14-使用类型操作和泛型避免重复代码)
 - [15. 对动态数据使用索引签名](#15-对动态数据使用索引签名)
 - [16. 优先使用 Array，Tuple 以及 ArrayLike 而不是 number 类型的索引签名](#16-优先使用-Array-Tuple-以及-ArrayLike-而不是-number-类型的索引签名)
+- [17. 使用 `readonly` 避免与数据修改有关的错误](#17-使用-readonly-避免与数据修改有关的错误)
 
 ## 正文
 
@@ -1734,4 +1735,116 @@ interface ArrayLike<T> {
   readonly length: number;
   readonly [n: number]: T;
 }
+```
+
+### 17. 使用 `readonly` 避免与数据修改有关的错误
+
+假设有一个输出三角形数字（1，1+2，1+2+3，等）的代码：
+
+```typescript
+function printTriangles(n: number) {
+  const nums = [];
+  for (leti = 0; i < n; i++) {
+    nums.push(i);
+    console.log(arraySum(nums));
+  }
+}
+```
+
+看上去很简单，但运行结果却和期望值不符：
+
+```typescript
+> printTriangles(5)
+0
+1
+2
+3
+4
+```
+
+这里的问题在于，`arraySum` 从名字上看并不会修改参数 `arr`，但实际上它的实现可能是这样的：
+
+```typescript
+function arraySum(arr: number[]) {
+  let sum = 0,
+    num;
+  while ((num = arr.pop()) !== undefined) {
+    sum += num;
+  }
+  return sum;
+}
+```
+
+该函数的实现在计算数字元素加和的同时还清空的数组，从语法上将这没有问题，因为在 JavaScript 中数据就是可变数据。但从程序设计的角度讲，这不是一个好的实践。
+
+一个更好的做法是，给参数 `arr` 加上 `readonly` 修饰符来表名该参数在函数内部不会被修改：
+
+```typescript
+function arraySum(arr: readonly number[]) {
+  let sum = 0,
+    num;
+  while ((num = arr.pop()) !== undefined) {
+    //              ~~~ 'pop' does not exist on type 'readonly number[]'
+    sum += num;
+  }
+  return sum;
+}
+```
+
+从错误信息可以看出，`readonly number[]` 是一种类型，它和 `number[]` 的区别在于：
+
+- 可以访问它的元素，但不能修改
+- 可以读取它的 `length` 属性，但不能修改该属性的值（修改 `length` 属性会同时修改数组元素）
+- 不能调用类似 `pop`，`push` 这种会修改数组内容的方法
+
+由于 `number[]` 比 `readonly number[]` 的限制更严格，因此 `number[]` 是 `readonly number[]` 的子类型。基于此，只读数组可以赋值给数组类型，反之则不行：
+
+```typescript
+const a: number[] = [1, 2, 3];
+const b: readonly number[] = a;
+const c: number[] = b;
+//    ~ Type 'readonly number[]' is 'readonly' and cannot be
+//      assigned to the mutable type 'number[]'
+```
+
+如果把一个函数参数声明为 `readonly`，这意味着：
+
+- TypeScript 会确保该参数在函数体内不会被修改
+- 调用方可以确保该函数不会修改相应的参数
+- 调用方可以给该参数传入一个被 `readonly` 修饰的变量
+
+通常来说如果函数不会修改它的参数，那么它就应该明确把参数声明为 `readonly` 的。`readonly` 是有“传染性”的：当函数要拿 `readonly` 的参数调用另一个函数时，被调用的函数也需要修改对应参数的类型声明。一般来说这是一个好事情，结果就是代码间更加清晰的契约关系与类型安全。如果被调用的是一个我们无法修改其参数类型声明的第三方包，那么在调用时可以使用类型断言（`param as number[]`）来移除 `readonly` 修饰。
+
+值得注意的一点是， `readonly` 的修饰是**浅层**的。如果数组元素是对象，那么这些对象自身依然是可以被修改的。
+
+```typescript
+const dates: readonly Date[] = [new Date()];
+dates.push(new Date());
+//    ~~~~ Property 'push' does not exist on type 'readonly Date[]'
+dates[0].setFullYear(2037); // ✅
+```
+
+与之类似的是 `readonly` 修饰符的近亲，`Readonly` 泛型：
+
+```typescript
+interface Outer {
+  inner: {
+    x: number;
+  };
+}
+const o: Readonly<Outer> = { inner: { x: 0 } };
+o.inner = { x: 1 };
+// ~~~~ Cannot assign to 'inner' because it is a read-only property
+o.inner.x = 1; // OK
+```
+
+此外，还可以给所以签名增加 `readonly` 修饰。这样做可以有效防止写入，但不影响读取：
+
+```typescript
+let obj: { readonly [k: string]: number } = {};
+// Or Readonly<{[k: string]: number}
+obj.hi = 45;
+//  ~~ Index signature in type ... only permits reading
+obj = { ...obj, hi: 12 }; // ✅
+obj = { ...obj, bye: 34 }; // ✅
 ```
