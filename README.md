@@ -30,6 +30,7 @@
 - [15. 对动态数据使用索引签名](#15-对动态数据使用索引签名)
 - [16. 优先使用 Array，Tuple 以及 ArrayLike 而不是 number 类型的索引签名](#16-优先使用-arraytuple-以及-arraylike-而不是-number-类型的索引签名)
 - [17. 使用 `readonly` 避免与数据修改有关的错误](#17-使用-readonly-避免与数据修改有关的错误)
+- [18. 使用映射类型使值保持同步](#18-使用映射类型使值保持同步)
 
 ## 正文
 
@@ -1848,3 +1849,114 @@ obj.hi = 45;
 obj = { ...obj, hi: 12 }; // ✅
 obj = { ...obj, bye: 34 }; // ✅
 ```
+
+### 18. 使用映射类型使值保持同步
+
+假设我们在开发一个用于绘制散点图的 UI 组件，该组件有一些属性用于控制展示效果：
+
+```typescript
+interface ScatterProps {
+  // 数据
+  xs: number[];
+  ys: number[];
+
+  // 显示
+  xRange: [number, number];
+  yRange: [number, number];
+  color: string;
+
+  // 事件
+  onClick: (x: number, y: number, index: number) => void;
+}
+```
+
+为了优化性能，只有当数据属性或显示属性变更时才需要重新渲染组件。要实现这个目的，通常会有以下几种方案。
+
+#### 方案一
+
+```typescript
+function shouldUpdate(oldProps: ScatterProps, newProps: ScatterProps) {
+  let k: keyof ScatterProps;
+  for (k in oldProps) {
+    if (oldProps[k] !== newProps[k]) {
+      if (k !== "onClick") return true;
+    }
+  }
+  return false;
+}
+```
+
+该方案的缺点在于，当新增一个属性时，每次属性变化都会引起组件的重新渲染，即使增加的是一个事件处理函数。
+
+#### 方案二
+
+```typescript
+function shouldUpdate(oldProps: ScatterProps, newProps: ScatterProps) {
+  return (
+    oldProps.xs !== newProps.xs ||
+    oldProps.ys !== newProps.ys ||
+    oldProps.xRange !== newProps.xRange ||
+    oldProps.yRange !== newProps.yRange ||
+    oldProps.color !== newProps.color
+    // 不检查 onClick
+  );
+}
+```
+
+这个方案不受新增事件属性的影响，但是在新增数据属性或显示属性后可能会漏掉一些必须的渲染，导致展示不正确。
+
+#### 方案三
+
+```typescript
+interface ScatterProps {
+  xs: number[];
+  ys: number[];
+  // ...
+  onClick: (x: number, y: number, index: number) => void;
+  // Note: if you add a property here, update shouldUpdate!
+}
+```
+
+这种期望通过增加注释来提醒开发人员的方法是最不具备可执行性的，类型检查器不能进行任何强制性的检查。
+
+比较理想的解决方案是引入一个映射类型：
+
+```typescript
+const REQUIRES_UPDATE: { [k in keyof ScatterProps]: boolean } = {
+  xs: true,
+  ys: true,
+  xRange: true,
+  yRange: true,
+  color: true,
+  onClick: false,
+};
+function shouldUpdate(oldProps: ScatterProps, newProps: ScatterProps) {
+  let k: keyof ScatterProps;
+  for (k in oldProps) {
+    if (oldProps[k] !== newProps[k] && REQUIRES_UPDATE[k]) {
+      return true;
+    }
+  }
+  return false;
+}
+```
+
+其中 `[k in keyof ScatterProps]` 告诉类型检查器 `REQUIRES_UPDATES` 应该拥有和 `ScatterProps` 完全一致的属性。如果在 `ScatterProps` 上新增的属性：
+
+```typescript
+interface ScatterProps {
+  // ...
+  onDoubleClick: () => void;
+}
+```
+
+类型检查器会自动给出提示：
+
+```typescript
+const REQUIRES_UPDATE: { [k in keyof ScatterProps]: boolean } = {
+  // ~~~~~~~~~~~~~~~ Property 'onDoubleClick' is missing in type
+  // ...
+};
+```
+
+在 ScatterProps 上删除一个属性时也会触发类似的提示。这样就确保了 `shouldUpdate` 检查的属性始终是和组件属性保持一致的。
