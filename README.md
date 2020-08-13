@@ -28,7 +28,7 @@
 - [13. 理解 `type` 和 `interface` 的区别](#13-理解-type-和-interface-的区别)
 - [14. 使用类型操作和泛型避免重复代码](#14-使用类型操作和泛型避免重复代码)
 - [15. 对动态数据使用索引签名](#15-对动态数据使用索引签名)
-- [16. 优先使用 Array，Tuple 以及 ArrayLike 而不是 number 类型的索引签名](#16-优先使用-Array-Tuple-以及-ArrayLike-而不是-number-类型的索引签名)
+- [16. 优先使用 Array，Tuple 以及 ArrayLike 而不是 number 类型的索引签名](#16-优先使用-arraytuple-以及-arraylike-而不是-number-类型的索引签名)
 - [17. 使用 `readonly` 避免与数据修改有关的错误](#17-使用-readonly-避免与数据修改有关的错误)
 
 ## 正文
