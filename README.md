@@ -32,6 +32,10 @@
 - [17. 使用 `readonly` 避免与数据修改有关的错误](#17-使用-readonly-避免与数据修改有关的错误)
 - [18. 使用映射类型使值保持同步](#18-使用映射类型使值保持同步)
 
+第三章 类型推断
+
+- [19. 避免代码被可推断的类型打乱](#19-避免代码被可推断的类型打乱)
+
 ## 正文
 
 ### 01. 理解 TypeScript 与 JavaScript 之间的关系
@@ -1960,3 +1964,213 @@ const REQUIRES_UPDATE: { [k in keyof ScatterProps]: boolean } = {
 ```
 
 在 ScatterProps 上删除一个属性时也会触发类似的提示。这样就确保了 `shouldUpdate` 检查的属性始终是和组件属性保持一致的。
+
+### 19. 避免代码被可推断的类型打乱
+
+给所有的变量声明类型并不是好的代码风格，有时甚至会适得其反。
+
+```typescript
+let x: number = 12; // 不要这样写
+let x = 12; // ✅ 应该这样
+```
+
+如果把鼠标移到 `x` 上，可以看到类型系统自动推断出的类型。
+
+<img src="./assets/8.png" width="300" />
+
+对于简单数据类型，应该尽可能使用系统自动推断出的类型。
+
+这种情况下显示的类型声明时多余的。编写它们只会增加代码中的噪声。如果不确定类型，可以随时在编辑器中查看。
+
+对于复杂对象，TypeScript 也可以推断其类型。与其向下面这样：
+
+```typescript
+const person: {
+  name: string;
+  born: {
+    where: string;
+    when: string;
+  };
+  died: {
+    where: string;
+    when: string;
+  };
+} = {
+  name: "Sojourner Truth",
+  born: {
+    where: "Swartekill, NY",
+    when: "c.1797",
+  },
+  died: {
+    where: "Battle Creek, MI",
+    when: "Nov. 26, 1883",
+  },
+};
+```
+
+其实可以更简单的直接写成：
+
+```typescript
+const person = {
+  name: "Sojourner Truth",
+  born: {
+    where: "Swartekill, NY",
+    when: "c.1797",
+  },
+  died: {
+    where: "Battle Creek, MI",
+    when: "Nov. 26, 1883",
+  },
+};
+```
+
+对于数组，TypeScript 一样可以进行正确推断。下面的例子中 TypeScript 可以基于输入值的类型以及运算符正确推断出返回值类型：
+
+```typescript
+function square(nums: number[]) {
+  return nums.map((x) => x * x);
+}
+const squares = square([1, 2, 3, 4]); // 类型是 number[]
+```
+
+合理利用类型推断有时也会使代码重构更方便。假设有一个 `Product` 类型以及一个记录它的函数：
+
+```typescript
+interface Product {
+  id: number;
+  name: string;
+  price: number;
+}
+function logProduct(product: Product) {
+  const id: number = product.id;
+  const name: string = product.name;
+  const price: number = product.price;
+  console.log(id, name, price);
+}
+```
+
+一段时间以后商品的 ID 中开始出现字母，于是需要把 `id` 类型变更为字符串。由于在 `logProduct` 中明确声明了 `id` 变量的类型，这一改动会产生一个类型错误：
+
+```typescript
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+}
+function logProduct(product: Product) {
+  const id: number = product.id;
+  //    ~~ Type 'string' is not assignable to type 'number'
+  const name: string = product.name;
+  const price: number = product.price;
+  console.log(id, name, price);
+}
+```
+
+如果在 `logProduct` 中合理利用了类型推断而不是明确声明类型，这里是不会产生报错的。更合理的 `logProduct` 的实现方式应该是这样的：
+
+```typescript
+function logProduct(product: Product) {
+  const { id, name, price } = product;
+  console.log(id, name, price);
+}
+```
+
+在某些情况下，TypeScript 没有足够的上下文来推断类型。这时仍然需要显式的类型声明，其中一个场景就是函数参数。
+
+TypeScript 会在首次引入变量时推断其类型，但函数参数只有在调用时才有具体值，因此需要显式声明其类型。有两个例外情况是不需要给函数参数显式声明类型的：
+
+- 当参数有默认值时，这时 TypeScript 可以从默认值推断出该参数的类型
+- 当函数被用作另一个函数的参数时，这时该函数参数的类型可以从调用方的签名中自动推断出来
+
+除了函数参数之外，还有几个常见场景是可能需要明确声明类型的。
+
+当定义对象字面量时，通过明确声明类型可以触发多余属性检查。这有助于捕获错误，尤其是对于有可选字段的类型。看个例子：
+
+```typescript
+const furby = { name: "Furby", id: 630509430963, price: 35 };
+logProduct(furby);
+//         ~~~~~ Argument .. is not assignable to parameter of type 'Product'
+//         Types of property 'id' are incompatible
+//         Type 'number' is not assignable to type 'string'
+```
+
+可以看到，错误是在使用时暴露出来的，更好的体验是在声明变量时即可捕获类型错误：
+
+```typescript
+const furby: Product = {
+  name: "Furby",
+  id: 630509430963,
+  //~~ Type 'number' is not assignable to type 'string'
+  price: 35,
+};
+logProduct(furby);
+```
+
+与对象字面量类似的是函数返回值。通过明确声明函数返回值，可以帮助开发者从一定程度上检查函数实现逻辑是否正确。由于在开发中总是先声明函数签名与返回值，再实现函数具体逻辑，所以这一流程和测试驱动开发有异曲同工之妙。举个具体例子：
+
+假设有一个函数用于查询股票报价：
+
+```typescript
+function getQuote(ticker: string) {
+  return fetch(`https://quotes.example.com/?q=${ticker}`).then((response) =>
+    response.json()
+  );
+}
+```
+
+之后为其增加了缓存机制：
+
+```typescript
+const cache: { [ticker: string]: number } = {};
+function getQuote(ticker: string) {
+  if (ticker in cache) {
+    return cache[ticker];
+  }
+  return fetch(`https://quotes.example.com/?q=${ticker}`)
+    .then((response) => response.json())
+    .then((quote) => {
+      cache[ticker] = quote;
+      return quote;
+    });
+}
+```
+
+在这次修改中引入了一个缺陷，在缓存命中时应该返回 `Promise.resolve(cache[ticker])` 以保证该函数始终返回一个 Promise。但这个缺陷并没有反映在 `getQuote` 的定义中，而是在调用它的地方：
+
+```typescript
+getQuote("MSFT").then(considerBuying);
+//               ~~~~ Property 'then' does not exist on type
+//                    'number | Promise<any>'
+//                    Property 'then' does not exist on type 'number'
+```
+
+更好的做法是明确声明 `getQuote` 函数的返回值类型为 `Promise<number>`。这样就可以将该缺陷捕获在函数内部：
+
+```typescript
+const cache: { [ticker: string]: number } = {};
+function getQuote(ticker: string): Promise<number> {
+  if (ticker in cache) {
+    return cache[ticker];
+    //     ~~~~~~~~~~~~~ Type 'number' is not assignable to 'Promise<number>'
+  }
+  // ...
+}
+```
+
+另一个想要声明返回值类型的场景是想要使用一个命名类型的时候。假设有函数：
+
+```typescript
+interface Vector2D {
+  x: number;
+  y: number;
+}
+function add(a: Vector2D, b: Vector2D) {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+```
+
+可以在编辑器中看到类型系统自动推断出的返回值类型：
+
+<img src="./assets/9.png" width="500" />
+
+为了避免调用方对返回值类型感到惊讶，这里最好明确声明函数返回值类型为 `Vector2D`。
