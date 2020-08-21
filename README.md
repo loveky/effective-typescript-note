@@ -35,6 +35,7 @@
 第三章 类型推断
 
 - [19. 避免代码被可推断的类型打乱](#19-避免代码被可推断的类型打乱)
+- [20. 为不同类型使用不同变量](#20-为不同类型使用不同变量)
 
 ## 正文
 
@@ -2174,3 +2175,54 @@ function add(a: Vector2D, b: Vector2D) {
 <img src="./assets/9.png" width="500" />
 
 为了避免调用方对返回值类型感到惊讶，这里最好明确声明函数返回值类型为 `Vector2D`。
+
+### 20. 为不同类型使用不同变量
+
+在 JavaScript 中可以随意给同一个变量赋不同数据类型的值。
+
+```javascript
+let id = "12-34-56";
+fetchProduct(id); // 期望输入是一个字符串
+id = 123456;
+fetchProductBySerialNumber(id); // 期望输入是一个数字
+```
+
+同样的代码在 TypeScript 中会产生两个错误：
+
+```typescript
+let id = "12-34-56";
+fetchProduct(id);
+id = 123456;
+// ~~ '123456' is not assignable to type 'string'.
+fetchProductBySerialNumber(id);
+//                         ~~ Argument of type 'string' is not assignable to
+//                            parameter of type 'number'
+```
+
+基于第一次赋值操作，TypeScript 推断出变量 id 的值是 string 类型，进而推导出后续的两个类型错误。
+
+这使我们对 TypeScript 中的变量有了一个关键的了解：值可以变，但类型(通常)不可以。一种常见的改变类型的场景是"收缩类型"(在第 22 章会详细介绍)，但收缩类型只能让类型的值域更小，而不是更大。
+
+解决以上报错的一种方法是使用联合类型：
+
+```typescript
+let id: string | number = "12-34-56";
+fetchProduct(id);
+id = 123456; // ✅
+fetchProductBySerialNumber(id); // ✅
+```
+
+有意思的虽然声明的变量 id 的类型是 `string | number`，但 TypeScript 在每次赋值操作后总能推断出更准确的类型，所以作为函数参数使用时没有类型错误。
+
+尽管联合类型确实有效，但长远来看它可能会引入更多问题。这主要体现在每次使用该变量时都需要增加额外的代码来判断它到底是哪一种类型。
+
+更好解决方案是引入一个新变量：
+
+```typescript
+const id = "12-34-56";
+fetchProduct(id);
+const serial = 123456; // ✅
+fetchProductBySerialNumber(serial); // ✅
+```
+
+这样既可明确变量的类型又可以通过更准确的命名来表达变量的含义。
