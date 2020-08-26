@@ -36,6 +36,7 @@
 
 - [19. 避免代码被可推断的类型打乱](#19-避免代码被可推断的类型打乱)
 - [20. 为不同类型使用不同变量](#20-为不同类型使用不同变量)
+- [21. 理解类型扩大](#21-理解类型扩大)
 
 ## 正文
 
@@ -2226,3 +2227,115 @@ fetchProductBySerialNumber(serial); // ✅
 ```
 
 这样既可明确变量的类型又可以通过更准确的命名来表达变量的含义。
+
+### 21. 理解类型扩大
+
+在运行时，每个变量都会有一个确定的值。但当 TypeScript 在进行静态类型检查时，每个变量的值是不确定的，它可能是某个范围内任意值，这个取值范围就是该变量的类型。当初始化变量为某个值但是没有明确声明其类型时，TypeScript 需要从该特定值推断出这个变量的所有可能值，也就是要从初始值推断出变量的类型。这个过程被称为“类型扩大”。
+
+假设你开发了一个操作向量的库。其中有一个表示三维向量的类型以及访问它各个方向上值的函数：
+
+```typescript
+interface Vector3 {
+  x: number;
+  y: number;
+  z: number;
+}
+function getComponent(vector: Vector3, axis: "x" | "y" | "z") {
+  return vector[axis];
+}
+```
+
+这段代码在使用时会报一个类型错误：
+
+```typescript
+let x = "x";
+let vec = { x: 10, y: 20, z: 30 };
+getComponent(vec, x);
+//                ~ Argument of type 'string' is not assignable to
+//                  parameter of type '"x" | "y" | "z"'
+```
+
+报错原因在于变量 x 的类型被推断为 `string`，但是 `getComponent` 函数的第二个参数需要传入一个更精确的类型。
+
+对于某个特定值，它可能同时属于多个类型，这使得类型扩大有时候看起来有点模棱两可。举个例子，假设有变量：
+
+```typescript
+const mixed = ["x", 1];
+```
+
+变量 mixed 的类型应该被推断为什么呢？以下是一些可能的答案：
+
+- `('x' | 1)[]`
+- `['x', 1]`
+- `[string, number]`
+- `readonly [string, number]`
+- `(string|number)[]`
+- `readonly (string|number)[]`
+- `[any, any]`
+- `any[]`
+
+在没有更多上下文的前提下，TypeScript 并不能确定那一个类型才是“正确的”。它只能猜测开发者的意图（在上边这个例子中，它猜测的结果是`(string|number)[]`）。尽管如此，TypeScript 并不能每次都 100% 猜对，结果就是像第一个例子中那样无意间引发了类型错误。
+
+在第一个例子中，变量 x 的类型被推断为 `string`，这是因为 TypeScript 允许下面这样的赋值：
+
+```typescript
+let x = "x";
+x = "a";
+x = "Four score and seven years ago...";
+```
+
+JavaScript 还允许这样的赋值：
+
+```typescript
+let x = "x";
+x = /x|y|z/;
+x = ["x", "y", "z"];
+```
+
+在把变量 x 推断为 `string` 时，TypeScript 其实是尝试在准确性和灵活性之间寻找平衡点。基本规则是变量的类型在声明之后不能修改，所以 `string` 类型比 `string|RegExp or string|string[]` 或是 `any` 都更有意义。
+
+TypeScript 提供了一些影响类型扩大的手段，其中一个是 `const` 关键字。使用 `const` 声明的变量会得到一个更准确的类型。这可以修复第一个例子中的报错：
+
+```typescript
+const x = "x"; // 类型是 "x"
+let vec = { x: 10, y: 20, z: 30 };
+getComponent(vec, x); // ✅
+```
+
+在使用 `const` 的版本中，由于变量 x 不可能再被重新赋值，因此 TypeScript 可以安全的推断其类型为 "x"。
+
+`const` 不是万金油。对于对象和数组，还是存在不确定性。前面提到的 mixed 变量的例子展示了数组的问题：TypeScript 应该推断它为一个元组类型吗？它的元素应该是什么类型？同样的问题也适用于对象。以下的代码在 JavaScript 中可以正常运行：
+
+```typescript
+const v = { x: 1 };
+v.x = 3;
+v.x = "3";
+v.y = 4;
+v.name = "Pythagoras";
+```
+
+在对象类型的推断机制中，TypeScript 会把对象的每个属性当成是使用 `let` 声明一样对待。因此变量 v 的类型是 `{x: number}`。
+
+如果开发者有更多的上下文信息，那么可以给 TypeScript 提供更多的提示信息。其中一个手段是提供类型注释：
+
+```typescript
+const v: { x: 1 | 3 | 5 } = { x: 1 }; // 类型是 { x: 1 | 3 | 5; }
+```
+
+还有一个手段是 `const 断言`。**注意这个使用 `const` 关键字声明变量完全不同。**下面看一个 `const 断言` 的例子：
+
+```typescript
+const v1 = { x: 1, y: 2 }; // 类型是 { x: number; y: number; }
+const v2 = {
+  x: 1 as const,
+  y: 2,
+}; // 类型是 { x: 1; y: number; }
+const v3 = { x: 1, y: 2 } as const; // 类型是 { readonly x: 1; readonly y: 2; }
+```
+
+还可以对数组使用 `const 断言`：
+
+```typescript
+const a1 = [1, 2, 3]; // 类型是 number[]
+const a2 = [1, 2, 3] as const; // 类型是 readonly [1, 2, 3]
+```
