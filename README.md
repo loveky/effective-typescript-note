@@ -37,6 +37,7 @@
 - [19. 避免代码被可推断的类型打乱](#19-避免代码被可推断的类型打乱)
 - [20. 为不同类型使用不同变量](#20-为不同类型使用不同变量)
 - [21. 理解类型扩大](#21-理解类型扩大)
+- [22. 理解类型缩小](#22-理解类型缩小)
 
 ## 正文
 
@@ -2339,3 +2340,133 @@ const v3 = { x: 1, y: 2 } as const; // 类型是 { readonly x: 1; readonly y: 2;
 const a1 = [1, 2, 3]; // 类型是 number[]
 const a2 = [1, 2, 3] as const; // 类型是 readonly [1, 2, 3]
 ```
+
+### 22. 理解类型缩小
+
+与类型扩大对应的是类型缩小。当 TypeScript 从上下文中获取到更多信息时会自动给赋予更精确的类型。最常见的是 `null` 检查：
+
+```typescript
+const el = document.getElementById("foo"); // 类型是 HTMLElement | null
+if (el) {
+  el; // 类型是 HTMLElement，因为 null 不会进入这个代码分支
+  el.innerHTML = "Party Time".blink();
+} else {
+  el; // 类型是 null
+  alert("No element #foo");
+}
+```
+
+通过抛出异常或是在函数中执行 `return` 也可以实现类似的效果：
+
+```typescript
+const el = document.getElementById("foo"); // 类型是 HTMLElement | null
+if (!el) throw new Error("Unable to find #foo");
+el; // 类型是 HTMLElement
+el.innerHTML = "Party Time".blink();
+```
+
+除了 `null` 检查外，`instanceof`、属性检查也可以实现类型缩小：
+
+```typescript
+function contains(text: string, search: string | RegExp) {
+  if (search instanceof RegExp) {
+    search; // 类型是 RegExp
+    return !!search.exec(text);
+  }
+  search; // 类型是 string
+  return text.includes(search);
+}
+```
+
+```typescript
+interface A {
+  a: number;
+}
+interface B {
+  b: number;
+}
+function pickAB(ab: A | B) {
+  if ("a" in ab) {
+    ab; // 类型是 A
+  } else {
+    ab; // 类型是 B
+  }
+  ab; // 类型是 A | B
+}
+```
+
+另一种常用的类型缩小的方法是给类型上增加一个单独的“标签”字段：
+
+```typescript
+interface UploadEvent {
+  type: "upload";
+  filename: string;
+  contents: string;
+}
+interface DownloadEvent {
+  type: "download";
+  filename: string;
+}
+type AppEvent = UploadEvent | DownloadEvent;
+
+function handleEvent(e: AppEvent) {
+  switch (e.type) {
+    case "download":
+      e; // 类型是 DownloadEvent
+      break;
+    case "upload":
+      e; // 类型是 UploadEvent
+      break;
+  }
+}
+```
+
+这被称为“标记的联合类型”，在 TypeScript 中很常见。
+
+如果 TypeScript 不能自动从上下文中缩小类型，还可以通过引入一个函数的方式来帮助它：
+
+```typescript
+function isInputElement(el: HTMLElement): el is HTMLInputElement {
+  return "value" in el;
+}
+function getElementContent(el: HTMLElement) {
+  if (isInputElement(el)) {
+    el; // 类型是 HTMLInputElement
+    return el.value;
+  }
+  el; // 类型是 HTMLElement
+  return el.textContent;
+}
+```
+
+`isInputElement` 函数定义中的 `el is HTMLInputElement` 称为类型谓语，它表示如果 `isInputElement` 函数返回 true，那么 TypeScript 就可以在函数执行的上下文中将 `el` 参数的类型缩小为 `HTMLInputElement`。这种用法被称为“类型守卫”。
+
+当处理数组或对象时类型守卫可以帮我们处理空类型。举个例子，假设有以下代码：
+
+```typescript
+const jackson5 = ["Jackie", "Tito", "Jermaine", "Marlon", "Michael"];
+const members = ["Janet", "Michael"].map((who) =>
+  jackson5.find((n) => n === who)
+); // 类型是 (string | undefined)[]
+```
+
+假如想过滤掉 members 数组中的 `undefined`，可以通过数组的 `filter` 方法：
+
+```typescript
+const members = ["Janet", "Michael"]
+  .map((who) => jackson5.find((n) => n === who))
+  .filter((who) => who !== undefined); // 类型是 (string | undefined)[]
+```
+
+这里过滤后的 members 数组的类型依然是 `(string | undefined)[]`。这时可以把传给 `filter` 的过滤函数加上类型谓语：
+
+```typescript
+function isDefined<T>(x: T | undefined): x is T {
+  return x !== undefined;
+}
+const members = ["Janet", "Michael"]
+  .map((who) => jackson5.find((n) => n === who))
+  .filter(isDefined); // 类型是 string[]
+```
+
+这样就可以实现值和类型的双重过滤。
